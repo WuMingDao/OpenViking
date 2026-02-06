@@ -673,6 +673,42 @@ class TestFilterOpsPath(unittest.TestCase):
             self._search({"op": "must_not", "field": "file_path", "conds": ["/a"]}), [4, 5]
         )
 
+    def test_path_must_normalize_leading_slash(self):
+        """Test Must/MustNot when path values are missing leading '/'"""
+        data = [
+            {"id": 6, "embedding": [1.0, 0, 0, 0], "file_path": "a/b/c"},
+            {"id": 7, "embedding": [1.0, 0, 0, 0], "file_path": "f/h/i"},
+            {"id": 8, "embedding": [1.0, 0, 0, 0], "file_path": "a"},
+            {"id": 9, "embedding": [1.0, 0, 0, 0], "file_path": "viking://resources/tmp/x"},
+        ]
+        self.collection.upsert_data(data)
+
+        # Must /a -> /a/b/c, /a/b/d, /a/e, and /a
+        self.assertEqual(
+            self._search({"op": "must", "field": "file_path", "conds": ["/a"]}),
+            [1, 2, 3, 6, 8],
+        )
+        # Must /a/b -> /a/b/c, /a/b/d
+        self.assertEqual(
+            self._search({"op": "must", "field": "file_path", "conds": ["/a/b"]}),
+            [1, 2, 6],
+        )
+        # Must /f -> /f/g, /f/h/i
+        self.assertEqual(
+            self._search({"op": "must", "field": "file_path", "conds": ["/f"]}),
+            [4, 5, 7],
+        )
+        # MustNot /a/b -> exclude 1, 2, 6
+        self.assertEqual(
+            self._search({"op": "must_not", "field": "file_path", "conds": ["/a/b"]}),
+            [3, 4, 5, 7, 8, 9],
+        )
+        # Ensure scheme is preserved, only prefixed with '/'
+        self.assertEqual(
+            self._search({"op": "must", "field": "file_path", "conds": ["/viking://resources"]}),
+            [9],
+        )
+
     def test_path_depth(self):
         """Test path type depth parameter"""
         # Must /a with depth=1 (para="-d=1")
